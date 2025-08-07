@@ -9,52 +9,34 @@ import pandas as pd
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.path_utils import get_path
 from utils.common_functions import get_current_week_info, save_dataframe_csv
-from config import CHROME_DRIVER_PATH
+from utils.selenium_base import setup_chrome_driver, ChromeDriverFactory
+from utils.logging_config import get_project_logger
+from utils.error_handling import with_retry, handle_selenium_error
+from config import get_config
+
+logger = get_project_logger(__name__)
 
 
+@with_retry(max_attempts=3)
 def setup_chrome_driver():
-    """Chrome 드라이버 설정"""
-    chrome_options = Options()
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
+    """Chrome 드라이버 설정 (개선된 버전 사용)"""
     try:
-        driver = webdriver.Chrome(service=Service(CHROME_DRIVER_PATH), options=chrome_options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver = ChromeDriverFactory.create_chrome_driver(headless=False, use_stealth=True)
+        logger.info("Chrome 드라이버 설정 성공")
         return driver
     except Exception as e:
-        print(f"Chrome 드라이버 설정 실패: {e}")
+        logger.error(f"Chrome 드라이버 설정 실패: {e}")
         return None
 
 
-def find_sns_links_for_artist(driver, artist_name):
-    """네이버 검색으로 아티스트의 SNS 링크들 찾기"""
-    search_url = f'https://search.naver.com/search.naver?where=nexearch&query={artist_name}+프로필'
-    
-    print(f"🔍 검색 중: {artist_name}")
-    driver.get(search_url)
-    time.sleep(3)
-    
-    # 결과 저장용
-    sns_links = {
-        'artist_name': artist_name,
-        'instagram_link': None,
-        'youtube_link': None,
-        'twitter_link': None
-    }
-    
+def _find_profile_element(driver):
+    """프로필 영역 찾기 및 더보기 버튼 클릭"""
     try:
-        # 프로필 영역 찾기
         profile = driver.find_element(By.CLASS_NAME, "cm_content_area._cm_content_area_profile")
         
         # 더보기 버튼 클릭 시도
@@ -64,67 +46,112 @@ def find_sns_links_for_artist(driver, artist_name):
             time.sleep(1)
         except NoSuchElementException:
             pass
-        
-        # 1. 인스타그램 링크 찾기
-        instagram_selectors = [
-            "a[href^='https://www.instagram.com/']",
-            "a[href^='https://instagram.com/']"
-        ]
-        
-        for selector in instagram_selectors:
-            try:
-                insta_element = profile.find_element(By.CSS_SELECTOR, selector)
-                sns_links['instagram_link'] = insta_element.get_attribute('href')
-                print(f"  📸 인스타그램: {sns_links['instagram_link']}")
-                break
-            except NoSuchElementException:
-                continue
-        
-        # 2. 유튜브 링크 찾기
-        youtube_selectors = [
-            "a[href^='https://www.youtube.com/']",
-            "a[href^='https://www.youtube.com/channel/']",
-            "a[href^='https://www.youtube.com/@']",
-            "a[href^='https://youtube.com/']"
-        ]
-        
-        for selector in youtube_selectors:
-            try:
-                youtube_element = profile.find_element(By.CSS_SELECTOR, selector)
-                sns_links['youtube_link'] = youtube_element.get_attribute('href')
-                print(f"  🎵 유튜브: {sns_links['youtube_link']}")
-                break
-            except NoSuchElementException:
-                continue
-        
-        # 3. 트위터 링크 찾기
-        twitter_selectors = [
-            "a[href^='https://twitter.com/']",
-            "a[href^='https://www.twitter.com/']",
-            "a[href^='https://x.com/']",
-            "a[href^='https://www.x.com/']"
-        ]
-        
-        for selector in twitter_selectors:
-            try:
-                twitter_element = profile.find_element(By.CSS_SELECTOR, selector)
-                sns_links['twitter_link'] = twitter_element.get_attribute('href')
-                print(f"  🐦 트위터: {sns_links['twitter_link']}")
-                break
-            except NoSuchElementException:
-                continue
-        
-        # 찾은 링크 개수 출력
-        found_count = sum(1 for link in [sns_links['instagram_link'], sns_links['youtube_link'], sns_links['twitter_link']] if link)
-        print(f"  ✅ 총 {found_count}개 링크 발견")
-        
-        if found_count == 0:
-            print(f"  ❌ SNS 링크 없음")
             
+        return profile
     except NoSuchElementException:
-        print(f"  ❌ 프로필 정보 없음")
+        logger.warning("프로필 영역을 찾을 수 없음")
+        return None
+
+
+def _find_sns_link(profile, platform_selectors, platform_name):
+    """특정 플랫폼의 SNS 링크 찾기"""
+    for selector in platform_selectors:
+        try:
+            element = profile.find_element(By.CSS_SELECTOR, selector)
+            link = element.get_attribute('href')
+            logger.info(f"  {platform_name}: {link}")
+            return link
+        except NoSuchElementException:
+            continue
+    return None
+
+
+def find_sns_links_for_artist(driver, artist_name):
+    """네이버 검색으로 아티스트의 SNS 링크들 찾기"""
+    crawling_config = get_config('crawling')
+    search_url = f'https://search.naver.com/search.naver?where=nexearch&query={artist_name}+프로필'
+    
+    logger.info(f"🔍 검색 중: {artist_name}")
+    driver.get(search_url)
+    time.sleep(crawling_config.get('naver_search_delay', 3))
+    
+    # 결과 저장용
+    sns_links = {
+        'artist_name': artist_name,
+        'instagram_link': None,
+        'youtube_link': None,
+        'twitter_link': None
+    }
+    
+    profile = _find_profile_element(driver)
+    if not profile:
+        logger.warning(f"  ❌ {artist_name} 프로필 정보 없음")
+        return sns_links
+    
+    # SNS 플랫폼별 선택자 정의
+    platform_configs = {
+        'instagram': {
+            'selectors': [
+                "a[href^='https://www.instagram.com/']",
+                "a[href^='https://instagram.com/']"
+            ],
+            'emoji': '📸'
+        },
+        'youtube': {
+            'selectors': [
+                "a[href^='https://www.youtube.com/']",
+                "a[href^='https://www.youtube.com/channel/']",
+                "a[href^='https://www.youtube.com/@']",
+                "a[href^='https://youtube.com/']"
+            ],
+            'emoji': '🎵'
+        },
+        'twitter': {
+            'selectors': [
+                "a[href^='https://twitter.com/']",
+                "a[href^='https://www.twitter.com/']",
+                "a[href^='https://x.com/']",
+                "a[href^='https://www.x.com/']"
+            ],
+            'emoji': '🐦'
+        }
+    }
+    
+    # 각 플랫폼별 링크 찾기
+    for platform, config in platform_configs.items():
+        link = _find_sns_link(profile, config['selectors'], f"{config['emoji']} {platform}")
+        sns_links[f'{platform}_link'] = link
+    
+    # 결과 요약
+    found_count = sum(1 for link in [sns_links['instagram_link'], sns_links['youtube_link'], sns_links['twitter_link']] if link)
+    if found_count > 0:
+        logger.info(f"  ✅ 총 {found_count}개 링크 발견")
+    else:
+        logger.warning(f"  ❌ SNS 링크 없음")
     
     return sns_links
+
+
+def collect_single_artist_sns_links(artist_name):
+    """단일 아티스트의 SNS 링크 수집 (대시보드용)"""
+    driver = setup_chrome_driver()
+    if not driver:
+        print("Chrome 드라이버를 설정할 수 없습니다.")
+        return None
+    
+    try:
+        sns_data = find_sns_links_for_artist(driver, artist_name)
+        return sns_data
+    except Exception as e:
+        print(f"SNS 링크 수집 중 오류 발생 ({artist_name}): {e}")
+        return {
+            'artist_name': artist_name,
+            'instagram_link': None,
+            'youtube_link': None,
+            'twitter_link': None
+        }
+    finally:
+        driver.quit()
 
 
 def collect_all_sns_links(artist_names):
@@ -166,7 +193,7 @@ def collect_all_sns_links(artist_names):
 
 def main():
     """메인 실행 함수"""
-    print("🎵 아티스트 SNS 링크 수집기 시작")
+    print("아티스트 SNS 링크 수집기 시작")
     print("=" * 50)
     
     # 아티스트 리스트 로드

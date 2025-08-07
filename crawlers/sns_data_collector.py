@@ -98,8 +98,7 @@ def login_instagram(driver):
         
         password_input = driver.find_element(By.CSS_SELECTOR, "input[aria-label='비밀번호']")
         password_input.send_keys(instagram_pw)
-        
-        
+                
         time.sleep(2)
         
         # 로그인 버튼 클릭
