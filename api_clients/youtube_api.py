@@ -129,10 +129,10 @@ class YouTubeAPIClient:
             results.append({
                 'channel_id': item['id'],
                 'channel_title': snippet.get('title', ''),
-                'subscriber_count': int(subscriber_count) if subscriber_count else None,
+                'subscriber_count': int(subscriber_count) if subscriber_count and subscriber_count.isdigit() else 0,
                 'hidden_subscriber_count': hidden_subscriber_count,
-                'view_count': int(stats.get('viewCount', 0)),
-                'video_count': int(stats.get('videoCount', 0)),
+                'view_count': int(stats.get('viewCount', 0)) if stats.get('viewCount', '0').isdigit() else 0,
+                'video_count': int(stats.get('videoCount', 0)) if stats.get('videoCount', '0').isdigit() else 0,
                 'description': snippet.get('description', '')[:200],
                 'published_at': snippet.get('publishedAt', ''),
                 'country': snippet.get('country', ''),

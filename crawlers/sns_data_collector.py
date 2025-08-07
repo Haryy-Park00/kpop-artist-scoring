@@ -7,18 +7,23 @@ import sys
 import time
 import re
 import glob
+from pathlib import Path
+
 import pandas as pd
-from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 프로젝트 루트 추가
+sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.path_utils import get_path
 from utils.common_functions import get_current_week_info, save_dataframe_csv, process_numeric_string
-from config import CHROME_DRIVER_PATH
+from utils.selenium_base import ChromeDriverFactory
+from utils.logging_config import get_project_logger
+from utils.error_handling import with_retry
+from config import get_config
+
+logger = get_project_logger(__name__)
 
 
 def _close_instagram_popups(driver):
@@ -56,41 +61,36 @@ def _try_alternative_instagram_selector(driver):
         return 0
 
 
+@with_retry(max_attempts=3)
 def setup_chrome_driver():
-    """Chrome 드라이버 설정"""
-    chrome_options = Options()
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
+    """Chrome 드라이버 설정 - ChromeDriverFactory 사용"""
     try:
-        driver = webdriver.Chrome(service=Service(CHROME_DRIVER_PATH), options=chrome_options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver = ChromeDriverFactory.create_chrome_driver(headless=False, use_stealth=True)
+        logger.info("Chrome 드라이버 설정 성공")
         return driver
     except Exception as e:
-        print(f"Chrome 드라이버 설정 실패: {e}")
+        logger.error(f"Chrome 드라이버 설정 실패: {e}")
         return None
 
 
+@with_retry(max_attempts=2)
 def login_instagram(driver):
     """인스타그램 로그인 처리"""
     try:
-        print('🔐 인스타그램 로그인 시도...')
+        logger.info('인스타그램 로그인 시도...')
         
         # 현재 URL이 로그인 페이지인지 확인
         current_url = driver.current_url
         if 'accounts/login' not in current_url:
-            print(f'현재 URL: {current_url}')
-            print('로그인 페이지가 아닙니다. 건너뜁니다.')
+            logger.info(f'현재 URL: {current_url}')
+            logger.info('로그인 페이지가 아닙니다. 건너뜁니다.')
             return True
 
         instagram_id = os.getenv('INSTAGRAM_ID')
         instagram_pw = os.getenv('INSTAGRAM_PASSWORD')
         
         if not instagram_id or not instagram_pw:
-            print('❌ 인스타그램 로그인 정보가 환경변수에 설정되지 않았습니다.')
+            logger.error('인스타그램 로그인 정보가 환경변수에 설정되지 않았습니다.')
             return False
         
         username_input = driver.find_element(By.CSS_SELECTOR, "input[aria-label='전화번호, 사용자 이름 또는 이메일']")
@@ -154,6 +154,7 @@ def get_youtube_data_via_api(youtube_links):
     return youtube_data
 
 
+@with_retry(max_attempts=3)
 def get_instagram_followers(driver, instagram_url):
     """인스타그램 팔로워 수 크롤링 (CSV에서 가져온 URL 직접 사용)"""
     if pd.isna(instagram_url):
@@ -217,6 +218,7 @@ def get_instagram_followers(driver, instagram_url):
     return instagram_follower_num
 
 
+@with_retry(max_attempts=2)
 def get_twitter_followers(driver, twitter_url):
     """트위터/X 팔로워 수 크롤링 (CSV에서 가져온 URL 직접 사용)"""
     if pd.isna(twitter_url):
@@ -301,7 +303,7 @@ def collect_sns_data(sns_links_df):
 
             }
             
-            # YouTube 데이터 (API에서 가져온 것)
+            # YouTube 데이터 
             if artist_name in youtube_data:
                 yt_data = youtube_data[artist_name]
                 artist_data['youtube_subscribers'] = yt_data.get('subscriber_count', 0)

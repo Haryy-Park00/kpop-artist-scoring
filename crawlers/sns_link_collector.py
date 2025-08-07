@@ -5,33 +5,26 @@
 import os
 import sys
 import time
+import glob
+from pathlib import Path
+
 import pandas as pd
-from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 프로젝트 루트 추가
+sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.path_utils import get_path
 from utils.common_functions import get_current_week_info, save_dataframe_csv
-from utils.selenium_base import setup_chrome_driver, ChromeDriverFactory
+from utils.selenium_base import ChromeDriverFactory
 from utils.logging_config import get_project_logger
-from utils.error_handling import with_retry, handle_selenium_error
+from utils.error_handling import with_retry
 from config import get_config
 
 logger = get_project_logger(__name__)
 
 
-@with_retry(max_attempts=3)
-def setup_chrome_driver():
-    """Chrome 드라이버 설정 (개선된 버전 사용)"""
-    try:
-        driver = ChromeDriverFactory.create_chrome_driver(headless=False, use_stealth=True)
-        logger.info("Chrome 드라이버 설정 성공")
-        return driver
-    except Exception as e:
-        logger.error(f"Chrome 드라이버 설정 실패: {e}")
-        return None
 
 
 def _find_profile_element(driver):
@@ -132,11 +125,14 @@ def find_sns_links_for_artist(driver, artist_name):
     return sns_links
 
 
+@with_retry(max_attempts=3)
 def collect_single_artist_sns_links(artist_name):
     """단일 아티스트의 SNS 링크 수집 (대시보드용)"""
-    driver = setup_chrome_driver()
-    if not driver:
-        print("Chrome 드라이버를 설정할 수 없습니다.")
+    try:
+        driver = ChromeDriverFactory.create_chrome_driver(headless=False, use_stealth=True)
+        logger.info("Chrome 드라이버 설정 성공")
+    except Exception as e:
+        logger.error(f"Chrome 드라이버를 설정할 수 없습니다: {e}")
         return None
     
     try:
@@ -156,10 +152,12 @@ def collect_single_artist_sns_links(artist_name):
 
 def collect_all_sns_links(artist_names):
     """모든 아티스트의 SNS 링크 수집"""
-    driver = setup_chrome_driver()
-    if not driver:
-        print("Chrome 드라이버를 설정할 수 없습니다.")
-        return None
+    try:
+        driver = ChromeDriverFactory.create_chrome_driver(headless=False, use_stealth=True)
+        logger.info("Chrome 드라이버 설정 성공")
+    except Exception as e:
+        logger.error(f"Chrome 드라이버를 설정할 수 없습니다: {e}")
+        return pd.DataFrame()
     
     all_sns_data = []
     
@@ -199,9 +197,8 @@ def main():
     # 아티스트 리스트 로드
     try:
         artist_folder = get_path("data/artist_list")
-        import glob
-        files = glob.glob(str(artist_folder / "*한터차트*월드*.csv"))
-        
+        files = glob.glob(str(artist_folder / "*아티스트*.csv"))
+            
         if not files:
             print("❌ 아티스트 리스트 파일을 찾을 수 없습니다.")
             return

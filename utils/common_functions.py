@@ -53,33 +53,40 @@ def read_dataframe_csv(file_path: str, encoding: str = None) -> Optional[pd.Data
     return df
 
 
-def process_numeric_string(value):
-    """숫자+단위 문자열 처리 (sns_crawling.py에서 가져옴)"""
-    if value is None:
-        raise ValueError("Input value cannot be None")
+def process_numeric_string(value: str) -> int:
+    """숫자+단위 문자열을 정수로 변환 (최적화된 버전)"""
+    import re
     
-    # 쉼표 제거
-    value = value.replace(',', '')
+    if not value or not isinstance(value, str):
+        return 0
     
-    # 백만, 만, 천 단위 처리
-    if '백만' in value:
-        number = float(value.replace('백만', '').strip())
-        return int(number * 1000000)
-    elif '만' in value:
-        number = float(value.replace('만', '').strip())
-        return int(number * 10000)
-    elif '천' in value:
-        number = float(value.replace('천', '').strip())
-        return int(number * 1000)
-    elif '억' in value:
-        number = float(value.replace('천', '').strip())
-        return int(number * 100000000)
+    # 공백과 쉼표 제거
+    value = re.sub(r'[,\s]', '', value.strip())
     
-    else:
-        try:
-            return int(value)
-        except ValueError:
-            return 0
+    # 단위 매핑 (순서 중요: 긴 단위부터)
+    unit_multipliers = {
+        '백만': 1_000_000,
+        '억': 100_000_000, 
+        '만': 10_000,
+        '천': 1_000,
+        'M': 1_000_000,
+        'K': 1_000
+    }
+    
+    for unit, multiplier in unit_multipliers.items():
+        if unit in value:
+            try:
+                number_str = value.replace(unit, '')
+                number = float(number_str) if '.' in number_str else int(number_str)
+                return int(number * multiplier)
+            except (ValueError, TypeError):
+                continue
+    
+    # 순수 숫자 처리
+    try:
+        return int(float(value)) if '.' in value else int(value)
+    except (ValueError, TypeError):
+        return 0
 
 
 def clean_venue_name(venue_name):
