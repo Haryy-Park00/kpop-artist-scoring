@@ -25,8 +25,6 @@ from config import get_config
 logger = get_project_logger(__name__)
 
 
-
-
 def _find_profile_element(driver):
     """프로필 영역 찾기 및 더보기 버튼 클릭"""
     try:
@@ -139,7 +137,7 @@ def collect_single_artist_sns_links(artist_name):
         sns_data = find_sns_links_for_artist(driver, artist_name)
         return sns_data
     except Exception as e:
-        print(f"SNS 링크 수집 중 오류 발생 ({artist_name}): {e}")
+        logger.error(f"SNS 링크 수집 중 오류 발생 ({artist_name}): {e}")
         return {
             'artist_name': artist_name,
             'instagram_link': None,
@@ -173,7 +171,7 @@ def collect_all_sns_links(artist_names):
                 time.sleep(2)
                 
             except Exception as e:
-                print(f"  ❌ 오류 발생 ({artist}): {e}")
+                logger.error(f"오류 발생 ({artist}): {e}")
                 # 오류가 있어도 빈 데이터라도 추가
                 all_sns_data.append({
                     'artist_name': artist,
@@ -200,15 +198,15 @@ def main():
         files = glob.glob(str(artist_folder / "*아티스트*.csv"))
             
         if not files:
-            print("❌ 아티스트 리스트 파일을 찾을 수 없습니다.")
+            logger.error("아티스트 리스트 파일을 찾을 수 없습니다.")
             return
         
         latest_file = max(files)
-        print(f"📁 아티스트 리스트 로드: {latest_file}")
+        logger.info(f"아티스트 리스트 로드: {latest_file}")
         
         artist_df = pd.read_csv(latest_file)
         if '아티스트명' not in artist_df.columns:
-            print("❌ '아티스트명' 컬럼을 찾을 수 없습니다.")
+            logger.error("'아티스트명' 컬럼을 찾을 수 없습니다.")
             return
         
         artist_names = artist_df['아티스트명'].unique().tolist()
@@ -219,7 +217,7 @@ def main():
         sns_df = collect_all_sns_links(artist_names)
         
         if sns_df is None or sns_df.empty:
-            print("❌ 수집된 데이터가 없습니다.")
+            logger.error("수집된 데이터가 없습니다.")
             return
         
         # 년도/주차 정보 추가
@@ -263,9 +261,7 @@ def main():
                 print(f"  ❌ SNS 링크 없음")
         
     except Exception as e:
-        print(f"❌ 오류 발생: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"오류 발생: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
