@@ -34,45 +34,49 @@ st.set_page_config(
 
 
 def collect_sns_links_for_single_artist(artist_name):
-    """단일 아티스트의 SNS 링크 수집 (간단버전)"""
+    """단일 아티스트의 SNS 링크 수집 - 실제 크롤링"""
     try:
-        # 실제로는 selenium을 사용하지만 데모용으로 간소화
-        # from crawlers.sns_link_collector import find_sns_links_for_artist, setup_chrome_driver
+        # 실제 SNS 크롤링 함수 임포트 및 호출
+        from crawlers.sns_link_collector import collect_single_artist_sns_links
         
-        # driver = setup_chrome_driver()
-        # if not driver:
-        #     return None
-        #     
-        # sns_data = find_sns_links_for_artist(driver, artist_name)
-        # driver.quit()
-        # return sns_data
+        # 검색 시작 알림
+        progress_placeholder = st.empty()
+        progress_placeholder.info(f"🔍 {artist_name}의 SNS 링크를 네이버에서 검색 중...")
         
-        # 데모용 시뮬레이션
-        import time
-        import random
+        sns_data = collect_single_artist_sns_links(artist_name)
         
-        time.sleep(1)  # 검색 시뮬레이션
+        if sns_data:
+            # 개별 링크 발견 상태 표시
+            links_found = []
+            if sns_data.get('instagram_link'):
+                links_found.append("📸 Instagram")
+            if sns_data.get('youtube_link'):
+                links_found.append("🎵 YouTube")  
+            if sns_data.get('twitter_link'):
+                links_found.append("🐦 Twitter")
+            
+            if links_found:
+                progress_placeholder.success(f"✅ 발견된 링크: {', '.join(links_found)}")
+            else:
+                progress_placeholder.warning("❌ 검색 완료되었지만 SNS 링크를 찾을 수 없습니다.")
+            
+            return sns_data
+        else:
+            progress_placeholder.error("❌ SNS 링크 검색에 실패했습니다. Chrome 드라이버 설정을 확인해주세요.")
+            return None
         
-        # 랜덤하게 일부 링크 발견 시뮬레이션
-        has_insta = random.choice([True, False])
-        has_youtube = random.choice([True, False])
-        has_twitter = random.choice([True, False])
-        
-        return {
-            'artist_name': artist_name,
-            'instagram_link': f"https://instagram.com/{artist_name.lower().replace(' ', '')}" if has_insta else None,
-            'youtube_link': f"https://youtube.com/@{artist_name.lower().replace(' ', '')}" if has_youtube else None,
-            'twitter_link': f"https://twitter.com/{artist_name.lower().replace(' ', '')}" if has_twitter else None
-        }
-        
+    except ImportError as e:
+        st.error(f"❌ SNS 크롤링 모듈 임포트 오류: {e}")
+        st.info("💡 crawlers/sns_link_collector.py 파일이 존재하는지 확인해주세요.")
+        return None
     except Exception as e:
-        print(f"SNS 링크 수집 오류: {e}")
+        st.error(f"❌ SNS 링크 수집 중 예상치 못한 오류 발생: {e}")
+        st.info("💡 Chrome 브라우저와 ChromeDriver가 설치되어 있는지 확인해주세요.")
         return None
 
 
 @st.cache_data(ttl=3600)  # 1시간 캐시
 def load_latest_data():
-    """최신 데이터 로드"""
     try:
         # YouTube 데이터
         youtube_files = glob.glob(str(get_path("data/follower/*YouTube*.csv")))
@@ -89,13 +93,6 @@ def load_latest_data():
             latest_spotify = max(spotify_files)
             spotify_df = pd.read_csv(latest_spotify)
             spotify_df['data_source'] = 'Spotify'
-        
-        # 통합 데이터
-        integrated_files = glob.glob(str(get_path("data/integrated_social/*통합리포트*.csv")))
-        integrated_df = None
-        if integrated_files:
-            latest_integrated = max(integrated_files)
-            integrated_df = pd.read_csv(latest_integrated)
         
         # 아티스트 리스트
         artist_files = glob.glob(str(get_path("data/artist_list/*한터차트*월드*.csv")))
@@ -157,36 +154,6 @@ def create_growth_metrics(youtube_df, spotify_df):
                 value=f"{total_followers:,.0f}명",
                 delta=None
             )
-
-def create_comparison_chart(integrated_df):
-    """플랫폼별 비교 차트"""
-    if integrated_df is None or integrated_df.empty:
-        return None
-    
-    # YouTube와 Spotify 데이터가 모두 있는 아티스트만
-    comparison_df = integrated_df.dropna(subset=['youtube_subscribers', 'spotify_followers'])
-    
-    if comparison_df.empty:
-        return None
-    
-    fig = px.scatter(
-        comparison_df,
-        x='youtube_subscribers',
-        y='spotify_followers',
-        hover_name='artist_name',
-        title='YouTube vs Spotify 팔로워 상관관계',
-        labels={
-            'youtube_subscribers': 'YouTube 구독자 수',
-            'spotify_followers': 'Spotify 팔로워 수'
-        },
-        size='spotify_popularity',
-        color='spotify_popularity',
-        color_continuous_scale='viridis'
-    )
-    
-    fig.update_layout(height=500)
-    
-    return fig
 
 
 def create_bigc_artist_scoring_dashboard(bigc_df):
@@ -434,22 +401,12 @@ def collect_artist_data_realtime(artist_name):
                     collected_data['youtube_link'] = sns_data.get('youtube_link')
                     collected_data['twitter_link'] = sns_data.get('twitter_link')
                     
-                    # SNS 팔로워 수 추정 (실제 구현시에는 각 플랫폼 API 사용)
-                    if collected_data['instagram_link']:
-                        st.success(f"✅ Instagram 링크 발견")
-                        # collected_data['instagram'] = estimate_instagram_followers()
-                    if collected_data['youtube_link']:
-                        st.success(f"✅ YouTube 링크 발견")
-                    if collected_data['twitter_link']:
-                        st.success(f"✅ Twitter 링크 발견")
-                        
-                    if not any([collected_data['instagram_link'], collected_data['youtube_link'], collected_data['twitter_link']]):
-                        st.warning("❌ SNS 링크를 찾을 수 없습니다.")
+                    # 발견된 링크들에 대한 개별 피드백은 collect_sns_links_for_single_artist에서 처리됨
                 else:
                     st.warning("❌ SNS 크롤링에 실패했습니다.")
                     
             except Exception as e:
-                st.warning(f"SNS 링크 수집 중 오류: {str(e)}")
+                st.error(f"SNS 링크 수집 중 오류: {str(e)}")
         
         # 3. 자동 점수 계산
         if collected_data['spotify'] > 0 or collected_data['popularity'] > 0:
@@ -976,7 +933,6 @@ def main():
         ### 📊 주요 지표
         - **YouTube**: 구독자 수, 조회수, 영상 수
         - **Spotify**: 인기도 점수, 팔로워 수, 장르 정보
-        - **KOPIS**: 공연 정보, 공연장 데이터
         
         ### 🔄 데이터 업데이트
         - 매일 오전 9시 자동 수집 (Cron job 설정 시)
@@ -996,7 +952,6 @@ def main():
         api_status = {
             "YouTube API": bool(os.getenv('YOUTUBE_API_KEY')),
             "Spotify API": bool(os.getenv('SPOTIFY_CLIENT_ID')),
-            "KOPIS API": bool(os.getenv('KOPIS_SERVICE_KEY'))
         }
         
         for api, status in api_status.items():
