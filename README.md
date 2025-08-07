@@ -13,11 +13,29 @@ K-Pop 아티스트의 Spotify 데이터와 SNS 정보를 실시간으로 수집�
 - 카테고리별 점수 차트
 - 평가 히스토리 추적
 
+## 🌳 브랜치 전략
+
+이 프로젝트는 **Git Flow**를 사용합니다:
+
+- **`main`**: 🚀 프로덕션 안정 브랜치 (실제 데이터 수집)
+- **`develop`**: 🔧 개발 통합 브랜치 (새로운 기능 테스트)
+- **`feature/*`**: ✨ 기능 개발 브랜치
+
+자세한 내용은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
+
 ## 🚀 사용 방법
 
 ### 1. 환경 설정
 ```bash
-pip install streamlit pandas plotly selenium requests python-dotenv
+# 저장소 클론
+git clone https://github.com/Haryy-Park00/kpop-artist-scoring.git
+cd kpop-artist-scoring
+
+# develop 브랜치로 전환 (개발용)
+git checkout develop
+
+# 의존성 설치
+pip install -r requirements.txt
 ```
 
 ### 2. 환경 변수 설정 (.env 파일)

@@ -1,20 +1,15 @@
-name: K-Pop Data Collection (Development)
+name: K-Pop Data Collection (Production)
 
 on:
   schedule:
-    # 매주 화요일 UTC 01:00 (한국시간 10:00) - 개발 환경 테스트용
-    - cron: '0 1 * * 2'
+    # 매주 월요일 UTC 00:00 (한국시간 09:00) - 프로덕션 실행
+    - cron: '0 0 * * 1'
   workflow_dispatch:  # 수동 실행 가능
-  push:
-    branches: [ develop ]  # develop 브랜치 푸시시에도 실행
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-
+  
 jobs:
   collect-data:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'  # develop 브랜치에서만 실행
+    if: github.ref == 'refs/heads/main'  # main 브랜치에서만 실행
     
     steps:
     - name: Checkout code
@@ -52,10 +47,21 @@ jobs:
         
     - name: Set up environment variables
       run: |
+        echo "ENVIRONMENT=production" >> $GITHUB_ENV
         echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" >> $GITHUB_ENV
         echo "INSTAGRAM_ID=${{ secrets.INSTAGRAM_ID }}" >> $GITHUB_ENV
         echo "INSTAGRAM_PASSWORD=${{ secrets.INSTAGRAM_PASSWORD }}" >> $GITHUB_ENV
+        echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL }}" >> $GITHUB_ENV
         echo "CHROME_DRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
+        
+    - name: Send start notification
+      run: |
+        python3 -c "
+        import sys
+        sys.path.append('.')
+        from utils.slack_notifications import send_slack_notification
+        send_slack_notification('start', 'Production Data Collection Started')
+        "
         
     - name: Run data collection
       run: |
@@ -63,19 +69,36 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         
-        # Run SNS link collection
-        python crawlers/sns_link_collector.py
+        # Run production workflow
+        python3 scheduler.py weekly
         
-        # Wait and run data collection
-        sleep 30
-        python crawlers/sns_data_collector.py
+    - name: Send completion notification
+      if: success()
+      run: |
+        python3 -c "
+        import sys
+        sys.path.append('.')
+        from utils.slack_notifications import send_slack_notification
+        send_slack_notification('success', 'Production Data Collection Completed')
+        "
+        
+    - name: Send failure notification
+      if: failure()
+      run: |
+        python3 -c "
+        import sys
+        sys.path.append('.')
+        from utils.slack_notifications import send_slack_notification
+        send_slack_notification('error', 'Production Data Collection Failed', error_msg='GitHub Actions workflow failed')
+        "
         
     - name: Commit and push results
+      if: success()
       run: |
         git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --local user.name "GitHub Action [Production]"
         git add data/
-        git diff --cached --quiet || git commit -m "Automated data collection - $(date '+%Y-%m-%d %H:%M:%S')"
+        git diff --cached --quiet || git commit -m "Production data collection - $(date '+%Y-%m-%d %H:%M:%S')"
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,7 +107,7 @@ jobs:
       uses: actions/upload-artifact@v3
       if: always()
       with:
-        name: collection-logs
+        name: production-collection-logs
         path: |
           logs/
           data/
