@@ -1,0 +1,84 @@
+name: K-Pop Data Collection
+
+on:
+  schedule:
+    # 매주 월요일 UTC 00:00 (한국시간 09:00)
+    - cron: '0 0 * * 1'
+  workflow_dispatch:  # 수동 실행 가능
+
+jobs:
+  collect-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip xvfb
+        
+    - name: Install Chrome
+      run: |
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+    - name: Install ChromeDriver
+      run: |
+        CHROME_VERSION=$(google-chrome --version | cut -d ' ' -f3 | cut -d '.' -f1-3)
+        DRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION}")
+        wget -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${DRIVER_VERSION}/chromedriver_linux64.zip"
+        sudo unzip /tmp/chromedriver.zip chromedriver -d /usr/local/bin/
+        sudo chmod +x /usr/local/bin/chromedriver
+        
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Set up environment variables
+      run: |
+        echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" >> $GITHUB_ENV
+        echo "INSTAGRAM_ID=${{ secrets.INSTAGRAM_ID }}" >> $GITHUB_ENV
+        echo "INSTAGRAM_PASSWORD=${{ secrets.INSTAGRAM_PASSWORD }}" >> $GITHUB_ENV
+        echo "CHROME_DRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
+        
+    - name: Run data collection
+      run: |
+        # Virtual display for headless browser
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        
+        # Run SNS link collection
+        python crawlers/sns_link_collector.py
+        
+        # Wait and run data collection
+        sleep 30
+        python crawlers/sns_data_collector.py
+        
+    - name: Commit and push results
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/
+        git diff --cached --quiet || git commit -m "Automated data collection - $(date '+%Y-%m-%d %H:%M:%S')"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: collection-logs
+        path: |
+          logs/
+          data/

@@ -67,3 +67,13 @@ tmp/
 
 # Streamlit 캐시
 .streamlit/
+
+# 테스트 파일
+test_*.py
+*_test.py
+tests/
+
+# 스케줄러 관련
+scheduler.log
+scheduler.pid
+nohup.out
