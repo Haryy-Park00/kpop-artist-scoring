@@ -225,7 +225,7 @@ def get_twitter_followers(driver, twitter_url):
     twitter_follower_num = 0
     
     try:
-        print(f"  🐦 트위터 접속: {twitter_url}")
+        print(f"트위터 접속: {twitter_url}")
         
         # 새 탭에서 트위터 열기
         driver.execute_script("window.open('');")
@@ -239,16 +239,16 @@ def get_twitter_followers(driver, twitter_url):
                 "/html/body/div[1]/div/div/div[2]/main/div/div/div/div[1]/"
                 "div/div[3]/div/div/div/div/div[5]/div[2]/a/span[1]/span"
             ).text
-            print(f"    🐦 트위터 raw 텍스트: {tw_follower_text}")
+            print(f"트위터 raw 텍스트: {tw_follower_text}")
             
             # 트위터 팔로워 수 처리 (이미 숫자만 있을 가능성이 높음)
             if tw_follower_text:
                 twitter_follower_num = process_numeric_string(tw_follower_text)
-                print(f"    ✅ 트위터 팔로워 수: {tw_follower_text} -> {twitter_follower_num:,}")
+                print(f"트위터 팔로워 수: {tw_follower_text} -> {twitter_follower_num:,}")
             else:
                 twitter_follower_num = 0
         except NoSuchElementException:
-            print(f"    ❌ 트위터 팔로워 수 찾지 못함")
+            print(f"트위터 팔로워 수 찾지 못함")
             twitter_follower_num = 0
 
         # 탭 닫고 원래 탭으로 복귀
@@ -256,7 +256,7 @@ def get_twitter_followers(driver, twitter_url):
         driver.switch_to.window(driver.window_handles[0])
 
     except Exception as e:
-        print(f"    ❌ 트위터 크롤링 오류: {e}")
+        print(f"트위터 크롤링 오류: {e}")
         # 오류 발생시 탭 정리
         try:
             if len(driver.window_handles) > 1:
@@ -295,9 +295,10 @@ def collect_sns_data(sns_links_df):
                 'twitter_link': row.get('twitter_link'),
                 'instagram_followers': 0,
                 'youtube_subscribers': 0,
+                'twitter_followers': 0,
                 'youtube_views': 0,
                 'youtube_videos': 0,
-                'twitter_followers': 0
+
             }
             
             # YouTube 데이터 (API에서 가져온 것)
@@ -306,7 +307,7 @@ def collect_sns_data(sns_links_df):
                 artist_data['youtube_subscribers'] = yt_data.get('subscriber_count', 0)
                 artist_data['youtube_views'] = yt_data.get('view_count', 0)
                 artist_data['youtube_videos'] = yt_data.get('video_count', 0)
-                print(f"  🎵 YouTube (API): 구독자 {artist_data['youtube_subscribers']:,}명")
+                print(f"YouTube: 구독자 {artist_data['youtube_subscribers']:,}명")
             
             # 인스타그램 크롤링 (URL 직접 사용)
             if pd.notna(row.get('instagram_link')):
