@@ -1,38 +1,56 @@
 """
-크롤링 공통 함수들
+크롤링 및 데이터 처리 공통 함수들
 """
 import datetime
 import time
 import pandas as pd
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
+from typing import Tuple, Optional
+from config import get_config
+from utils.logging_config import get_project_logger
+from utils.file_utils import safe_write_csv, safe_read_csv
+
+logger = get_project_logger(__name__)
 
 
-def get_current_week_info():
+def get_current_week_info() -> Tuple[int, int, int]:
     """현재 년도와 주차 정보 반환"""
     now = datetime.datetime.now()
     year, week_number, weekday = now.isocalendar()
     return year, week_number, weekday
 
 
-def safe_get_text(driver, xpath, default=""):
+def safe_get_text(driver, xpath: str, default: str = "") -> str:
     """안전한 텍스트 추출 (레거시 함수들 통합)"""
     try:
         element = driver.find_element(By.XPATH, xpath)
         return element.text.strip() if element.text.strip() else default
     except NoSuchElementException:
+        logger.debug(f"요소를 찾을 수 없음: {xpath}")
         return default
 
 
-def save_dataframe_csv(df, file_path, encoding='utf-8-sig'):
-    """DataFrame을 CSV로 저장 (인코딩 통일)"""
-    df.to_csv(file_path, index=False, encoding=encoding)
-    print(f"파일 저장 완료: {file_path}")
+def save_dataframe_csv(df: pd.DataFrame, file_path: str, encoding: str = None) -> bool:
+    """DataFrame을 CSV로 저장 (개선된 버전)"""
+    file_config = get_config('file')
+    encoding = encoding or file_config.get('csv_encoding', 'utf-8-sig')
+    
+    success = safe_write_csv(df, file_path, encoding=encoding)
+    if success:
+        logger.info(f"DataFrame CSV 저장 완료: {file_path}")
+    return success
 
 
-def read_dataframe_csv(file_path, encoding='utf-8-sig'):
-    """CSV 파일을 DataFrame으로 읽기 (인코딩 통일)"""
-    return pd.read_csv(file_path, encoding=encoding)
+def read_dataframe_csv(file_path: str, encoding: str = None) -> Optional[pd.DataFrame]:
+    """CSV 파일을 DataFrame으로 읽기 (개선된 버전)"""
+    file_config = get_config('file')
+    encoding = encoding or file_config.get('csv_encoding', 'utf-8-sig')
+    
+    df = safe_read_csv(file_path, encoding=encoding)
+    if df is not None:
+        logger.info(f"DataFrame CSV 로드 완료: {file_path}")
+    return df
 
 
 def process_numeric_string(value):
